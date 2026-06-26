@@ -25,7 +25,7 @@
     "PrivateKeyPath": "Keys/PrivateKey.pem"
   },
   "OidcProvider": {
-    "IssuerUri": "https://nt.solian.app",
+    "IssuerUri": "https://id.akiromusic.art",
     "PublicKeyPath": "Keys/PublicKey.pem",
     "PrivateKeyPath": "Keys/PrivateKey.pem",
     "AccessTokenLifetime": "01:00:00",
@@ -76,9 +76,9 @@
     "Server": "smtp4dev.orb.local",
     "Port": 25,
     "UseSsl": false,
-    "Username": "no-reply@mail.solsynth.dev",
+    "Username": "no-reply@mail.akiromusic.art",
     "Password": "password",
-    "FromAddress": "no-reply@mail.solsynth.dev",
+    "FromAddress": "no-reply@mail.akiromusic.art",
     "FromName": "Alphabot",
     "SubjectPrefix": "Solar Network"
   },

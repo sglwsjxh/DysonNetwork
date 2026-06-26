@@ -1,7 +1,7 @@
 {
   "Debug": true,
   "BaseUrl": "http://localhost:5216",
-  "SiteUrl": "https://id.solian.app",
+      "SiteUrl": "https://id.akiromusic.art",
   "Logging": {
     "LogLevel": {
       "Default": "Information",
@@ -26,7 +26,7 @@
     "PrivateKeyPath": "Keys/PrivateKey.pem"
   },
   "OidcProvider": {
-    "IssuerUri": "https://nt.solian.app",
+    "IssuerUri": "https://id.akiromusic.art",
     "PublicKeyPath": "Keys/PublicKey.pem",
     "PrivateKeyPath": "Keys/PrivateKey.pem",
     "AccessTokenLifetime": "01:00:00",
