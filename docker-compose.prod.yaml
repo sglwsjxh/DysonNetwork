@@ -1,0 +1,345 @@
+# ===========================================
+# DysonNetwork Production Docker Compose
+# ===========================================
+# Usage:
+#   docker-compose -f docker-compose.prod.yaml --env-file .env up -d
+#
+# Prerequisites:
+#   1. Copy .env.prod.template to .env and fill in values
+#   2. Set up Cloudflare Tunnel and get TUNNEL_TOKEN
+#   3. Build and push Docker images to your registry
+# ===========================================
+
+services:
+  # --- PostgreSQL 16 ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: dyson-postgres
+    restart: unless-stopped
+    shm_size: 256mb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?error}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./publish/init-dbs.sql:/docker-entrypoint-initdb.d/init-dbs.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  # --- Redis Cache ---
+  cache:
+    image: docker.io/library/redis:8.2-alpine
+    container_name: dyson-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?error}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  # --- NATS Message Queue ---
+  queue:
+    image: docker.io/library/nats:2.11-alpine
+    container_name: dyson-nats
+    restart: unless-stopped
+    command:
+      - "--user"
+      - "nats"
+      - "--pass"
+      - "${NATS_PASSWORD:?error}"
+      - "-js"
+      - "-m"
+      - "8222"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  # --- Ring (Authentication Core) ---
+  ring:
+    image: ${REGISTRY:-ghcr.io/sglwsjxh}/ring:${IMAGE_TAG:-latest}
+    container_name: dyson-ring
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      HTTP_PORTS: "8080"
+      ConnectionStrings__cache: "cache:6379,password=${REDIS_PASSWORD}"
+      ConnectionStrings__queue: "nats://nats:${NATS_PASSWORD}@queue:4222"
+      ConnectionStrings__App: "Host=postgres;Port=5432;Database=ring;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+      services__pass__http__0: "http://pass:8080"
+      SITE_URL: ${SITE_URL:-https://akiromusic.art}
+      ISSUER_URI: ${ISSUER_URI:-https://id.akiromusic.art}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+  # --- Pass (OAuth / Identity) ---
+  pass:
+    image: ${REGISTRY:-ghcr.io/sglwsjxh}/pass:${IMAGE_TAG:-latest}
+    container_name: dyson-pass
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+      ring:
+        condition: service_started
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      HTTP_PORTS: "8080"
+      ConnectionStrings__cache: "cache:6379,password=${REDIS_PASSWORD}"
+      ConnectionStrings__queue: "nats://nats:${NATS_PASSWORD}@queue:4222"
+      ConnectionStrings__App: "Host=postgres;Port=5432;Database=pass;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+      services__ring__http__0: "http://ring:8080"
+      services__develop__http__0: "http://develop:8080"
+      services__drive__http__0: "http://drive:8080"
+      SITE_URL: ${SITE_URL:-https://akiromusic.art}
+      ISSUER_URI: ${ISSUER_URI:-https://id.akiromusic.art}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+  # --- Drive (File Storage) ---
+  drive:
+    image: ${REGISTRY:-ghcr.io/sglwsjxh}/drive:${IMAGE_TAG:-latest}
+    container_name: dyson-drive
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+      ring:
+        condition: service_started
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      HTTP_PORTS: "8080"
+      ConnectionStrings__cache: "cache:6379,password=${REDIS_PASSWORD}"
+      ConnectionStrings__queue: "nats://nats:${NATS_PASSWORD}@queue:4222"
+      ConnectionStrings__App: "Host=postgres;Port=5432;Database=drive;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+      services__ring__http__0: "http://ring:8080"
+      services__pass__http__0: "http://pass:8080"
+      SITE_URL: ${SITE_URL:-https://akiromusic.art}
+      API_URL: ${API_URL:-https://api.akiromusic.art}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+  # --- Sphere (Social / Timeline) ---
+  sphere:
+    image: ${REGISTRY:-ghcr.io/sglwsjxh}/sphere:${IMAGE_TAG:-latest}
+    container_name: dyson-sphere
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+      ring:
+        condition: service_started
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      HTTP_PORTS: "8080"
+      ConnectionStrings__cache: "cache:6379,password=${REDIS_PASSWORD}"
+      ConnectionStrings__queue: "nats://nats:${NATS_PASSWORD}@queue:4222"
+      ConnectionStrings__App: "Host=postgres;Port=5432;Database=sphere;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+      services__ring__http__0: "http://ring:8080"
+      services__pass__http__0: "http://pass:8080"
+      services__drive__http__0: "http://drive:8080"
+      SITE_URL: ${SITE_URL:-https://akiromusic.art}
+      API_URL: ${API_URL:-https://api.akiromusic.art}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+  # --- Develop (Developer / Git Integration) ---
+  develop:
+    image: ${REGISTRY:-ghcr.io/sglwsjxh}/develop:${IMAGE_TAG:-latest}
+    container_name: dyson-develop
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+      ring:
+        condition: service_started
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      HTTP_PORTS: "8080"
+      ConnectionStrings__cache: "cache:6379,password=${REDIS_PASSWORD}"
+      ConnectionStrings__queue: "nats://nats:${NATS_PASSWORD}@queue:4222"
+      ConnectionStrings__App: "Host=postgres;Port=5432;Database=develop;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+      services__ring__http__0: "http://ring:8080"
+      services__pass__http__0: "http://pass:8080"
+      services__sphere__http__0: "http://sphere:8080"
+      SITE_URL: ${SITE_URL:-https://akiromusic.art}
+      API_URL: ${API_URL:-https://api.akiromusic.art}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+  # --- Insight (Analytics / Monitoring) ---
+  insight:
+    image: ${REGISTRY:-ghcr.io/sglwsjxh}/insight:${IMAGE_TAG:-latest}
+    container_name: dyson-insight
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+      ring:
+        condition: service_started
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      HTTP_PORTS: "8080"
+      ConnectionStrings__cache: "cache:6379,password=${REDIS_PASSWORD}"
+      ConnectionStrings__queue: "nats://nats:${NATS_PASSWORD}@queue:4222"
+      ConnectionStrings__App: "Host=postgres;Port=5432;Database=insight;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+      services__ring__http__0: "http://ring:8080"
+      services__pass__http__0: "http://pass:8080"
+      services__sphere__http__0: "http://sphere:8080"
+      services__develop__http__0: "http://develop:8080"
+      SITE_URL: ${SITE_URL:-https://akiromusic.art}
+      API_URL: ${API_URL:-https://api.akiromusic.art}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+  # --- YARP Gateway (Reverse Proxy / API Gateway) ---
+  gateway:
+    image: ${REGISTRY:-ghcr.io/sglwsjxh}/gateway:${IMAGE_TAG:-latest}
+    container_name: dyson-gateway
+    restart: unless-stopped
+    depends_on:
+      ring:
+        condition: service_started
+      pass:
+        condition: service_started
+      drive:
+        condition: service_started
+      sphere:
+        condition: service_started
+      develop:
+        condition: service_started
+      insight:
+        condition: service_started
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      HTTP_PORTS: "5001"
+      services__ring__http__0: "http://ring:8080"
+      services__pass__http__0: "http://pass:8080"
+      services__drive__http__0: "http://drive:8080"
+      services__sphere__http__0: "http://sphere:8080"
+      services__develop__http__0: "http://develop:8080"
+      services__insight__http__0: "http://insight:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      internal:
+      default:
+        aliases:
+          - api.akiromusic.art
+    ports:
+      - "127.0.0.1:5001:5001"
+
+  # --- Cloudflare Tunnel ---
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: dyson-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?error}
+    depends_on:
+      gateway:
+        condition: service_started
+    networks:
+      - default
+
+# --- Persistent Volumes ---
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# --- Networks ---
+networks:
+  # Internal network for backend service-to-service communication
+  internal:
+    driver: bridge
+    internal: true
+  # Default/external network for gateway and tunnel
+  default:
+    driver: bridge
