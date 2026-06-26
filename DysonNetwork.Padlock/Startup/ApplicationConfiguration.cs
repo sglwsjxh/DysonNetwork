@@ -29,8 +29,9 @@ public static class ApplicationConfiguration
                 "/.well-known/apple-app-site-association",
                 (IConfiguration config) =>
                 {
+                    // Apple OAuth is disabled for self-hosting — AppId endpoint kept for structural compatibility.
                     var appId =
-                        config["Authentication:Apple:AppId"] ?? "W7HPZ53V6B.dev.solsynth.solian";
+                        config["Authentication:Apple:AppId"] ?? "disabled";
                     return Results.Json(
                         new
                         {

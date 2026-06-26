@@ -489,7 +489,7 @@ public class OidcProviderController(
         if (client == null)
             return BadRequest(new ErrorResponse { Error = "unauthorized_client", ErrorDescription = "Client not found" });
 
-        var siteUrl = configuration["SiteUrl"] ?? "https://solsynth.dev";
+        var siteUrl = configuration["SiteUrl"] ?? "https://akiromusic.art";
         var scopes = request.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? [];
 
         var info = await oidcService.GenerateDeviceCodeAsync(client.Id, scopes, request.Nonce);

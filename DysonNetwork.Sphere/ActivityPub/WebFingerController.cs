@@ -49,7 +49,7 @@ public class WebFingerController(
         if (domain != Domain)
             return NotFound();
 
-        var serverUsername = configuration["ActivityPub:ServerActor:PreferredUsername"] ?? "solar-network";
+        var serverUsername = configuration["ActivityPub:ServerActor:PreferredUsername"] ?? "akiromusic.art";
         if (username.Equals(serverUsername, StringComparison.OrdinalIgnoreCase))
         {
             var serverActorUrl = $"https://{Domain}/activitypub/actor";

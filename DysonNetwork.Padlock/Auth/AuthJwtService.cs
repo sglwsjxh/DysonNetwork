@@ -32,10 +32,10 @@ public sealed class AuthJwtService(IConfiguration config)
         return rsa;
     }, LazyThreadSafetyMode.ExecutionAndPublication);
 
-    private string Issuer => config["Authentication:Schemes:Bearer:ValidIssuer"] ?? "solar-network";
+    private string Issuer => config["Authentication:Schemes:Bearer:ValidIssuer"] ?? "akiromusic.art";
 
     private string Audience => config.GetSection("Authentication:Schemes:Bearer:ValidAudiences").Get<string[]>()?.FirstOrDefault()
-                               ?? "solar-network";
+                               ?? "akiromusic.art";
 
     public string CreateUserToken(
         SnAuthSession session,
