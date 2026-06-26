@@ -3,7 +3,7 @@ name: Build and Push Microservices
 on:
     push:
         branches:
-            - master
+            - main
     workflow_dispatch:
 
 jobs:
@@ -116,6 +116,6 @@ jobs:
                   file: DysonNetwork.${{ matrix.service }}/Dockerfile
                   push: true
                   tags: |
-                      ghcr.io/${{ vars.PACKAGE_OWNER }}/dyson-${{ matrix.image }}:${{ steps.nbgv.outputs.SimpleVersion }}
-                      ghcr.io/${{ vars.PACKAGE_OWNER }}/dyson-${{ matrix.image }}:latest
+                      ghcr.io/sglwsjxh/dyson-${{ matrix.image }}:${{ steps.nbgv.outputs.SimpleVersion }}
+                      ghcr.io/sglwsjxh/dyson-${{ matrix.image }}:latest
                   platforms: linux/amd64
