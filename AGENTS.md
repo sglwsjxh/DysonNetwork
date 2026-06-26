@@ -353,3 +353,146 @@ eventBus.Subscribe<MyEvent>("my-event", async (data, headers) => {
 - Implicit usings enabled
 - No comments unless explicitly requested
 - Follow existing patterns in the codebase
+
+## 🚨 Hardcoded Solian/Solsynth URLs (Self-Host Checklist)
+
+This project has **extensive hardcoded references** to Solsynth LLC infrastructure.
+Below is a comprehensive inventory grouped by category.
+
+> **Goal**: Replace ALL of these before deploying to your own domain.
+
+### 1. AppSettings — Replace with Your Domain
+
+| File | Key | Current Value |
+|------|-----|---------------|
+| `DysonNetwork.Padlock/appsettings.json` | `OidcProvider:IssuerUri` | `https://nt.solian.app` |
+| `DysonNetwork.Passport/appsettings.json` | `OidcProvider:IssuerUri` | `https://nt.solian.app` |
+| `DysonNetwork.Sphere/appsettings.json` | `ActivityPub:Domain` | `solian.app` |
+| `DysonNetwork.Sphere/appsettings.json` | `ActivityPub:FileBaseUrl` | `https://solian.app/files` |
+| `DysonNetwork.Sphere/appsettings.json` | `SiteUrl` | `https://solian.app` |
+| `DysonNetwork.Passport/appsettings.json` | `AppleWallet:WebServiceUrl` | `https://api.solian.app/passport/passkit/v1` |
+| — *.appsettings.json | `Authentication:Schemes:Bearer:ValidIssuer` | `solar-network` |
+| — *.appsettings.json | `Oidc:Apple:ClientId` | `dev.solsynth.solian` |
+| `DysonNetwork.Ring/appsettings.json` | `Email:FromAddress` / `Email:Username` | `no-reply@mail.solsynth.dev` |
+| `DysonNetwork.Ring/appsettings.json` | `Email:SubjectPrefix` | `Solar Network` |
+
+### 2. Publish Settings — Same Pattern
+
+| File | Key | Current Value |
+|------|-----|---------------|
+| `publish/settings/pass.json` | `SiteUrl` | `https://id.solian.app` |
+| `publish/settings/sphere.json` | `SiteUrl` | `https://solian.app` |
+| `publish/settings/drive.json` | `OidcProvider:IssuerUri` | `https://nt.solian.app` |
+| `publish/settings/drive.json` | `Notifications:Topic` | `dev.solsynth.solian` |
+| `publish/settings/drive.json` | `Email:FromAddress` | `no-reply@mail.solsynth.dev` |
+| `publish/settings/drive.json` | `Storage:Remote[0]:Bucket` | `solar-network-development` |
+| `publish/settings/drive.json` | `Storage:Remote[1]:Bucket` | `solar-network` |
+| `publish/settings/ring.json` | `Email:FromAddress` / `Email:Username` | `no-reply@mail.solsynth.dev` |
+
+### 3. C# Source Code — Replace Defaults
+
+| File | Hardcoded Value |
+|------|----------------|
+| `DysonNetwork.Padlock/Auth/AuthJwtService.cs` | Default Issuer: `"solar-network"` |
+| `DysonNetwork.Padlock/Auth/OidcProvider/Controllers/OidcProviderController.cs` | Default SiteUrl: `"https://solsynth.dev"` |
+| `DysonNetwork.Padlock/Startup/ApplicationConfiguration.cs` | Default Apple AppId: `"W7HPZ53V6B.dev.solsynth.solian"` |
+| `DysonNetwork.Padlock/Startup/ApplicationConfiguration.cs` | Default Android PackageName: `"dev.solsynth.solian"` |
+| `DysonNetwork.Sphere/ActivityPub/WebFingerController.cs` | Default server username: `"solar-network"` |
+| `DysonNetwork.Sphere/ActivityPub/ServerActorController.cs` | Default PreferredUsername: `"solar-network"` |
+| `DysonNetwork.Wallet/Payment/SubscriptionService.cs` | Subscription group identifier: `"solian.stellar"` |
+| `DysonNetwork.Insight/SnChan/SnChanConfig.cs` | Official publisher name: `"solsynth"` |
+
+### 4. Deep Links & URL Schemes
+
+| Location | Content |
+|----------|---------|
+| `DysonNetwork.Padlock/Auth/QrLoginController.cs` | `solian://auth/qr/{id}` deep link scheme |
+| `DysonNetwork.Passport/Nfc/*.cs` | `solian://phpass` URL scheme (NFC pass) |
+| `DysonNetwork.Passport/Account/AccountCurrentController.cs` | File name: `"solian-member.pkpass"` |
+| `docs/OAUTH_DEVICE_FLOW.md` | References `api.solsynth.dev`, `solsynth.dev` |
+
+### 5. Git Submodules
+
+| File | URL |
+|------|-----|
+| `.gitmodules` (NeTo) | `https://src.solsynth.dev/SoSYS/NeTo.git` |
+| `AGENTS.md` (NeTo SSH) | `ssh://git@compute01.latxa-bushi.ts.net/SoSYS/NeTo.git` |
+
+### 6. Apple Wallet / Push Notifications
+
+| Config | Value |
+|--------|-------|
+| Apple Pass Type ID | `pass.solian.app.member` |
+| Apple Team ID | `W7HPZ53V6B` (shared across services) |
+| Apple Key ID | `B668YP4KBG` |
+| Push Notification Topic | `dev.solsynth.solian` |
+| APNs Bundle ID | `dev.solsynth.solian` / `dev.solsynth.solian.voip` |
+
+### 7. OAuth/OIDC External Provider IDs
+
+| Provider | Client ID |
+|----------|-----------|
+| Google OAuth | `961776991058-963m1qin2vtp8fv693b5fdrab5hmpl89.apps.googleusercontent.com` |
+| Apple OIDC | `dev.solsynth.solian` |
+
+### 8. Subscription Identifiers (Wallet)
+
+All subscription product IDs use the `solian.*` prefix:
+- `solian.stellar.primary`, `solian.stellar.nova`, `solian.stellar.supernova`
+- `solian.creator.plus`, `solian.creator.pro`
+- `solian.wallet` (payment method)
+- Afdian plan IDs map to `solian.stellar.*` identifiers
+
+## Docker Deployment
+
+### Architecture
+
+Each service is containerized with its own Dockerfile. The stack includes:
+
+- **YARP Reverse Proxy** (`gateway`) — entry point, routes `/api/*` paths to services
+- **8 microservices** — each runs on HTTP:8080 / HTTPS:7001 internally
+- **Redis** (`cache`) — shared caching + rate limiting
+- **NATS** (`queue`) — inter-service event bus with JetStream
+- **PostgreSQL** — one database per service (configured via ConnectionStrings:App)
+- **OpenTelemetry** — OTLP export to Aspire dashboard
+
+### docker-compose.yaml (root)
+
+Routes production traffic via YARP gateway on port 5001:
+
+```
+gateway:5001 → routes per path prefix → {service}:8080/api/...
+```
+
+Each service connects via:
+- `ConnectionStrings__cache=cache:6379,password=${CACHE_PASSWORD}`
+- `ConnectionStrings__queue=nats://nats:${QUEUE_PASSWORD}@queue:4222`
+- `services__{name}__http__0=http://{name}:8080` (service discovery)
+- `services__{name}__grpc__0=https://{name}:5001` (gRPC)
+
+### Environment Variables (`.env`)
+
+| Variable | Purpose |
+|----------|---------|
+| `CACHE_PASSWORD` | Redis password |
+| `QUEUE_PASSWORD` | NATS password |
+| `RING_IMAGE`, `PASS_IMAGE`, etc. | Container image tags |
+
+### Required External Services
+
+- **S3-compatible storage** (Minio / Cloudflare R2 / AWS S3) — configured in `Storage:Remote`
+- **PostgreSQL** — one database per service
+- **LiveKit** (optional) — real-time audio/video chat, configured in appsettings
+- **Sentry** (optional) — error tracking
+
+## Self-Host Prerequisites
+
+1. **Own domain** — replace all `*.solian.app`, `*.solsynth.dev`, `solsynth.dev`
+2. **PostgreSQL** — create 8 databases (`dyson_padlock`, `dyson_pass`, `dyson_sphere`, etc.)
+3. **Redis** — for caching
+4. **NATS** — for event bus (with JetStream enabled)
+5. **S3 storage** — for file uploads (Minio works for self-host)
+6. **SSL certificates** — for HTTPS + gRPC
+7. **Apple Developer account** (optional) — for Apple OIDC / Apple Wallet / Push Notifications
+8. **OIDC provider keys** — generate new RSA key pair for JWT signing
+9. **Reverse proxy** — YARP gateway or external nginx/caddy in front
